@@ -1,0 +1,81 @@
+// Load MODIS NDVI dataset
+var modisNDVI = ee.ImageCollection('MODIS/006/MYD13Q1');
+
+// Define the study area
+var studyArea = ee.FeatureCollection('projects/ee-navidmehdizade73nm/assets/Canada_NDVI');
+
+// Define start and end date
+var startDate = ee.Date('2022-05-01');
+var endDate = ee.Date('2022-09-30');
+
+// Filter MODIS dataset by date and region
+var filteredNDVI = modisNDVI.filterDate(startDate, endDate)
+  .filterBounds(studyArea);
+
+// Function to preprocess NDVI
+var preprocessNDVI = function(image) {
+  // Scale NDVI values to the range of -1 to 1
+  var ndvi = image.select('NDVI').divide(10000).multiply(2).subtract(1);
+  
+  // Mask out invalid values
+  var maskedNDVI = ndvi.updateMask(ndvi.gte(-1).and(ndvi.lte(1)));
+  
+  return maskedNDVI;
+};
+
+// Function to preprocess EVI
+var preprocessEVI = function(image) {
+  // Scale EVI values to the range of -1 to 1
+  var evi = image.select('EVI').divide(10000).multiply(2).subtract(1);
+  
+  // Mask out invalid values
+  var maskedEVI = evi.updateMask(evi.gte(-1).and(evi.lte(1)));
+  
+  return maskedEVI;
+};
+
+// Function to export monthly NDVI and EVI
+var exportMonthlyIndices = function(month, index) {
+  // Filter the image collection for the specific month
+  var monthFiltered = filteredNDVI.filter(ee.Filter.calendarRange(month, month, 'month'));
+
+  // Calculate the monthly mean NDVI and EVI
+  var monthlyMeanNDVI = monthFiltered.select('NDVI').mean().clip(studyArea);
+  var monthlyMeanEVI = monthFiltered.select('EVI').mean().clip(studyArea);
+
+  // Preprocess NDVI and EVI
+  var preprocessedNDVI = preprocessNDVI(monthlyMeanNDVI);
+  var preprocessedEVI = preprocessEVI(monthlyMeanEVI);
+
+  // Define export parameters for NDVI
+  var exportNameNDVI = 'Monthly_NDVI_2022_' + index;
+  var exportParamsNDVI = {
+    image: preprocessedNDVI,
+    description: exportNameNDVI,
+    folder: 'Monthly_NDVI_Canada_2016_2021',
+    scale: 250,
+    region: studyArea,
+    maxPixels: 1e13
+  };
+
+  // Define export parameters for EVI
+  var exportNameEVI = 'Monthly_EVI_2022_' + index;
+  var exportParamsEVI = {
+    image: preprocessedEVI,
+    description: exportNameEVI,
+    folder: 'Monthly_EVI_Canada_2016_2021',
+    scale: 250,
+    region: studyArea,
+    maxPixels: 1e13
+  };
+
+  // Export NDVI and EVI images to Drive
+  Export.image.toDrive(exportParamsNDVI);
+  Export.image.toDrive(exportParamsEVI);
+};
+
+// Iterate over each month in the year and export monthly NDVI and EVI images
+for (var i = 5; i <= 9; i++) {
+  var month = ee.Number(i);
+  exportMonthlyIndices(month, i);
+}
